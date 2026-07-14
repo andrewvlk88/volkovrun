@@ -1,44 +1,196 @@
+# Volkov Run Lab
 
-# Volkov Run Lab - Garmin Auto Sync Edition
+> אפליקציה אישית לניתוח ריצות — מפה אינטראקטיבית, גרפי גובה/דופק/מהירות, זיהוי חכם של עליות וירידות, וסנכרון אוטומטי מ-Garmin Connect.
 
-מערכת מלאה לניתוח ריצות Garmin עם מפה, גובה, מהירות, דופק והיסטוריה.
+---
 
-## מה יש בפנים
-- Backend FastAPI + SQLite
-- פרסור GPX / KML / CSV (כולל פורמט Interval של Garmin)
-- סנכרון אוטומטי מ Garmin Connect עם garminconnect + שמירת טוקן
-- Frontend React + Leaflet + Chart.js עם צביעה לפי מהירות/גובה/דופק
-- זיהוי ריצה רציפה וסימון דקות 12.5-15 (עלייה) ו 16-18 (דיליי עייפות)
+## מה האפליקציה עושה
 
-## הרצה מהירה
+Volkov Run Lab היא מערכת full-stack לניתוח נתוני ריצה. היא קולטת קבצי GPX/KML/CSV/TCX (העלאה ידנית או סנכרון אוטומטי מ-Garmin), מפרסרת את הנקודות, מחשבת סטטיסטיקות, ומציגה הכל בממשק RTL עברי עם מפה, גרפים, וניתוח חכם.
+
+### תכונות עיקריות
+
+| תכונה | תיאור |
+|-------|--------|
+| 🗺️ **מפה אינטראקטיבית** | מסלול הריצה על Leaflet/OpenStreetMap, עם צביעת הקו לפי מהירות / גובה / דופק |
+| 📊 **גרפים** | גובה לפי מרחק (Area chart), דופק + מהירות משולבים (Line chart דו-צירי) — Recharts |
+| 📈 **ניתוח חכם** | זיהוי ריצה רציפה (18-45 דק'), זיהוי עלייה משמעותית (דקות 12.5-15), זיהוי ירידה/דיליי עייפות (דקות 16-18) |
+| ⌚ **סנכרון Garmin** | סנכרון אוטומטי כל 30 דק' מ-Garmin Connect דרך `garminconnect` + `garth` (טוקנים, ללא 2FA לאחר התחברות ראשונה) |
+| 📤 **העלאת קבצים** | גרירת GPX/KML/CSV/TCX להעלאה ידנית |
+| 🗃️ **היסטוריה** | שמירת כל הריצות ב-SQLite, עם נתוני laps ו-raw stats |
+| 👟 **מעקב נעליים** | שדה shoes (ברירת מחדל: EVO SL) |
+
+---
+
+## ארכיטקטורה
+
+```
+volkov-run-lab/
+├── backend/                  # FastAPI + SQLite
+│   ├── main.py               # API endpoints + APScheduler (Garmin sync כל 30 דק')
+│   ├── parser.py             # פרסור GPX/KML/CSV + חישוב סטטיסטיקות
+│   ├── db.py                 # SQLite CRUD
+│   ├── garmin_sync.py        # סנכרון Garmin Connect + ניהול טוקנים
+│   ├── requirements.txt      # תלויות Python
+│   ├── Dockerfile
+│   ├── tokens/               # טוקני Garmin (לא ב-git!)
+│   └── .env                  # GARMIN_EMAIL, GARMIN_PASSWORD (לא ב-git!)
+│
+├── frontend/                 # React + Vite + Tailwind
+│   ├── src/
+│   │   ├── App.tsx           # דשבורד ראשי — סטטיסטיקות, מפה, גרפים, ניתוח
+│   │   ├── main.tsx          # entry point
+│   │   ├── components/
+│   │   │   ├── UploadZone.tsx # אזור גרירת קבצים
+│   │   │   └── MapView.tsx    # מפת Leaflet עם צביעת מסלול
+│   │   └── lib/
+│   │       ├── gpxParser.ts  # פרסור GPX בצד לקוח
+│   │       └── haversine.ts  # חישוב מרחק הבוורסין
+│   ├── index.html            # Tailwind CDN + config + Heebo font
+│   ├── package.json
+│   ├── vite.config.ts        # proxy /api → localhost:8000
+│   ├── tailwind.config.js    # (כרגע לא פעיל — Tailwind רץ מ-CDN)
+│   ├── postcss.config.js     # (כרגע לא פעיל)
+│   └── Dockerfile
+│
+├── docker-compose.yml        # backend:8000 + frontend:5173
+├── sample_gpx_gpx.txt        # דוגמת GPX לבדיקה
+├── sample_kml_kml.txt        # דוגמת KML לבדיקה
+└── README.md
+```
+
+---
+
+## API Endpoints
+
+| Method | Path | תיאור |
+|--------|------|--------|
+| `POST` | `/api/upload` | העלאת קובץ GPX/KML/CSV/TCX — מחזיר ריצה + נקודות |
+| `GET` | `/api/runs` | רשימת כל הריצות (מיון לפי תאריך יורד) |
+| `GET` | `/api/runs/{id}` | פרטי ריצה בודדת עם כל הנקודות |
+| `DELETE` | `/api/runs/{id}` | מחיקת ריצה |
+| `POST` | `/api/sync/garmin` | סנכרון ידני מ-Garmin (פרמטר `limit` אופציונלי, ברירת מחדל 10) |
+| `GET` | `/api/stats/summary` | סיכום: מספר ריצות, סה"ב ק"מ |
+
+---
+
+## איך מריצים
+
+### מקומית (Dev)
+
 ```bash
+# Backend
 cd backend
 pip install -r requirements.txt
-cp .env.example .env
-# ערוך .env עם GARMIN_EMAIL ו GARMIN_PASSWORD - רק מקומית!
+cp .env.example .env   # ערוך: GARMIN_EMAIL, GARMIN_PASSWORD
 uvicorn main:app --reload --port 8000
 
-# טרמינל שני
+# Frontend (טרמינל שני)
 cd frontend
 npm install
 npm run dev
 ```
+
 פתח http://localhost:5173
 
-## סנכרון Garmin - בטוח
-1. צור .env מקומי, אל תעלה ל git
-2. הרצה ראשונה: `python garmin_sync.py` - יבקש קוד 2FA פעם אחת וישמור tokens/ 
-3. מעכשיו הרצה אוטומטית: `POST /api/sync/garmin` או cron כל 30 דקות
-4. הטוקן מתרענן לבד, אין צורך בסיסמה שוב
+### Docker
 
-## Docker
 ```bash
 docker-compose up --build
 ```
 
-## להרמס Agent (GLM 5.2)
-תן להרמס את כל התיקייה הזו כפי שהיא. הפרומפט:
-"בנה והרץ את Volkov Run Lab לפי הקוד המצורף. אל תשנה לוגיקת haversine ו moving_average. ודא ש POST /api/upload עובד עם הקבצים המצורפים gpx.txt ו kml.txt. הוסף דף /settings לשמירת GARMIN_EMAIL ב localStorage וקריאה מ .env ב backend. הוסף background job כל 30 דקות שקורא ל garmin_sync.sync()"
+- Backend: http://localhost:8000
+- Frontend: http://localhost:5173
+
+---
+
+## סנכרון Garmin — בטוח
+
+1. צור `backend/.env` עם `GARMIN_EMAIL` ו-`GARMIN_PASSWORD` — **אל תעלה ל-git**
+2. הרצה ראשונה: `python garmin_sync.py` — יבקש קוד 2FA פעם אחת וישמור טוקנים ב-`tokens/`
+3. מעכשיו סנכרון אוטומטי: APScheduler רץ כל 30 דק' ברקע, או ידנית דרך `POST /api/sync/garmin`
+4. הטוקן מתרענן לבד — אין צורך בסיסמה שוב
+
+> **טוקנים ו-.env לעולם לא ב-git.** הקובץ `.gitignore` מדיר אותם.
+
+---
+
+## לוגיקת עיבוד — לא לגעת
+
+שתי פונקציות ליבה ב-`backend/parser.py` הן קריטיות ומכויילות לדיוק מקסימלי:
+
+### `haversine(lat1, lon1, lat2, lon2)`
+מרחק במטרים בין שתי נקודות (R = 6,371,000 מ'). סטנדרטי, לא לשנות.
+
+### `moving_average(arr, w)`
+החלקה (smoothing) עם **edge-padded convolution** — מונעת רמפות מלאכותיות בתחילת/סוף המסלול. חלון ברירת מחדל 15, מורחב ל-30 לגובה.
+
+### חישוב עלייה (total_ascent)
+- דגימת גובה ממוצע מקודקד כל **60 שניות** (מסנן noise של GPS)
+- ספירת עליות **מתמשכות ≥ 2 מטר** בלבד בין דגימות (לא כל תנודה)
+- זה מתאים לדרך ש-Garmin מדווח עלייה נטו לכל טיפוס, לא סכום של כל jitter
+
+### זיהוי ריצה רציפה
+`is_continuous = True` כאשר משך הריצה בין 18 ל-45 דקות.
+
+---
+
+## מה האפליקציה צריכה להיות (Roadmap)
+
+### עיצוב — שפת עיצוב מלאה
+האפליקציה כרגע מעוצבת **dark theme** (סגול/כחול) עם Tailwind CDN. יש ליישם שפת עיצוב חדשה בהשראת דוח עיצובי חיצוני:
+
+- **פונט:** Heebo (במקום system-ui)
+- **פלטה:** אדום `#ef4444` (פעולה), ירוק `#22c55e` (חיובי), ענבר `#f59e0b` (עלייה), כחול `#3b82f6` (ירידה)
+- **בלי סגול** — להסיר את כל ה-accent violet/blue-500
+- **Pills עגולים** (`rounded-full`), כותרות `font-black`, מספרים ב-`font-mono`
+- **שני כיוונים:** Light theme (משטחים בהירים, רקע `#f8f7f5`, כרטיסים לבנים) ו-Dark theme (משטחים כהים עם אותה פלטה)
+
+### מעבר ל-Tailwind Build-Time
+כרגע Tailwind רץ מ-CDN (`cdn.tailwindcss.com`) — **לא מתאים לפרודקשן**. יש לעבור ל-pipeline build-time:
+1. להוסיף `src/index.css` עם `@tailwind base/components/utilities`
+2. לייבא אותו ב-`main.tsx`
+3. להעביר טוקנים + Heebo ל-`tailwind.config.js`
+4. להסיר את סקריפט ה-CDN מ-`index.html`
+
+### תכונות עתידיות
+- דף `/settings` לשמירת `GARMIN_EMAIL` ב-localStorage
+- השוואת ריצות (side-by-side)
+- ייצוא סיכום ל-PDF
+- מעקב נעליים — ק"מ מצטברים והתראה על בלאי
+- אינטגרציה Strava (נוסף על Garmin)
+- PWA — שמירה לאופליין
+
+---
+
+## נקודת התחלה להרמס Agent
+
+הפרומפט המקורי:
+
+> "בנה והרץ את Volkov Run Lab לפי הקוד המצורף. אל תשנה לוגיקת haversine ו moving_average. ודא ש POST /api/upload עובד עם הקבצים המצורפים gpx.txt ו kml.txt. הוסף דף /settings לשמירת GARMIN_EMAIL ב localStorage וקריאה מ .env ב backend. הוסף background job כל 30 דקות שקורא ל garmin_sync.sync()"
+
+---
 
 ## דוגמת נתונים
-ריצת הבוקר 3.01 ק"מ 22:39 קצב 7:32 דופק 133 - העלייה האמיתית 8.6מ' ב 12.5-15 דק', הירידה 2.7מ' ב 16-18 דק' עם דופק 138.
+
+ריצת הבוקר: 3.01 ק"מ, 22:39 דק', קצב 7:32 דק'/ק"מ, דופק ממוצע 133.
+העלייה האמיתית: 8.6 מ' בדקות 12.5-15, הירידה: 2.7 מ' בדקות 16-18 עם דופק 138.
+
+---
+
+## טכנולוגיות
+
+| שכבה | טכנולוגיה |
+|------|----------|
+| Backend | FastAPI 0.110, Uvicorn, SQLite, APScheduler |
+| פרסור | gpxpy 1.5, pandas 2.2, lxml 5.2, numpy 1.26 |
+| Garmin | garminconnect 0.2.21 + garth (טוקנים) |
+| Frontend | React 18, Vite 5, TypeScript 5.3 |
+| UI | Tailwind CSS 3.4 (CDN), Lucide icons |
+| גרפים | Recharts 3.9 |
+| מפות | React-Leaflet 4.2, OpenStreetMap |
+| Container | Docker Compose (Python 3.11 + Node 20) |
+
+---
+
+🪽 Hermes · 2026-07-14
