@@ -16,6 +16,7 @@ Volkov Run Lab היא מערכת full-stack לניתוח נתוני ריצה. ה
 | 📊 **גרפים** | גובה לפי מרחק (Area chart), דופק + מהירות משולבים (Line chart דו-צירי) — Recharts |
 | 📈 **ניתוח חכם** | זיהוי ריצה רציפה (18-45 דק'), זיהוי עלייה משמעותית (דקות 12.5-15), זיהוי ירידה/דיליי עייפות (דקות 16-18) |
 | ⌚ **סנכרון Garmin** | סנכרון אוטומטי כל 30 דק' מ-Garmin Connect דרך `garminconnect` + `garth` (טוקנים, ללא 2FA לאחר התחברות ראשונה) |
+| 💜 **סנכרון Whoop** | סנכרון אוטומטי כל 15 דק' מ-Whoop API v2 — recovery, sleep, cycle (strain, HRV, SpO2, דופק מנוחה, שלבי שינה) |
 | 📤 **העלאת קבצים** | גרירת GPX/KML/CSV/TCX להעלאה ידנית |
 | 🗃️ **היסטוריה** | שמירת כל הריצות ב-SQLite, עם נתוני laps ו-raw stats |
 | 👟 **מעקב נעליים** | שדה shoes (ברירת מחדל: EVO SL) |
@@ -31,10 +32,11 @@ volkov-run-lab/
 │   ├── parser.py             # פרסור GPX/KML/CSV + חישוב סטטיסטיקות
 │   ├── db.py                 # SQLite CRUD
 │   ├── garmin_sync.py        # סנכרון Garmin Connect + ניהול טוקנים
+│   ├── whoop_sync.py          # סנכרון Whoop API v2 + OAuth2 refresh
 │   ├── requirements.txt      # תלויות Python
 │   ├── Dockerfile
 │   ├── tokens/               # טוקני Garmin (לא ב-git!)
-│   └── .env                  # GARMIN_EMAIL, GARMIN_PASSWORD (לא ב-git!)
+│   └── .env                  # GARMIN_EMAIL, GARMIN_PASSWORD, WHOOP_ACCESS_TOKEN, WHOOP_REFRESH_TOKEN (לא ב-git!)
 │
 ├── frontend/                 # React + Vite + Tailwind
 │   ├── src/
@@ -70,6 +72,10 @@ volkov-run-lab/
 | `GET` | `/api/runs/{id}` | פרטי ריצה בודדת עם כל הנקודות |
 | `DELETE` | `/api/runs/{id}` | מחיקת ריצה |
 | `POST` | `/api/sync/garmin` | סנכרון ידני מ-Garmin (פרמטר `limit` אופציונלי, ברירת מחדל 10) |
+| `POST` | `/api/sync/whoop` | סנכרון ידני מ-Whoop (פרמטר `days` אופציונלי, ברירת מחדל 7) |
+| `GET` | `/api/whoop/recovery` | נתוני recovery — recovery_score, resting_hr, HRV, SpO2, skin_temp |
+| `GET` | `/api/whoop/sleep` | נתוני שינה — performance%, efficiency%, שלבי שינה (deep/rem/light) |
+| `GET` | `/api/whoop/cycle` | נתוני cycle — strain, קלוריות, דופק ממוצע/מקס |
 | `GET` | `/api/stats/summary` | סיכום: מספר ריצות, סה"ב ק"מ |
 
 ---
@@ -112,6 +118,30 @@ docker-compose up --build
 4. הטוקן מתרענן לבד — אין צורך בסיסמה שוב
 
 > **טוקנים ו-.env לעולם לא ב-git.** הקובץ `.gitignore` מדיר אותם.
+
+---
+
+## סנכרון Whoop — בטוח
+
+1. צור OAuth app ב-[Whoop Developer Portal](https://developer.whoop.com) עם redirect URI `http://localhost:8081/callback`
+2. השלם OAuth2 PKCE flow פעם אחת (דרך Hermes או ידנית) — מקבל `access_token` + `refresh_token`
+3. הוסף ל-`backend/.env`:
+   ```
+   WHOOP_CLIENT_ID=your_client_id
+   WHOOP_CLIENT_SECRET=your_client_secret
+   WHOOP_ACCESS_TOKEN=your_access_token
+   WHOOP_REFRESH_TOKEN=your_refresh_token
+   ```
+4. מעכשיו סנכרון אוטומטי: APScheduler רץ כל 15 דק' ברקע, או ידנית דרך `POST /api/sync/whoop`
+5. ה-access token מתרענן אוטומטית ב-401 — ה-refresh token נשמר ב-.env
+
+### טבלאות Whoop ב-DB
+
+| טבלה | נתונים |
+|------|--------|
+| `whoop_recovery` | recovery_score, resting_heart_rate, hrv_rmssd_ms, spo2_pct, skin_temp_c, day_strain |
+| `whoop_sleep` | sleep_performance_pct, sleep_efficiency_pct, total_sleep_milli, deep/rem/light_sleep_milli, sleep_need_milli |
+| `whoop_cycle` | strain, kilojoule, energy_burned_cal, avg_heart_rate, max_heart_rate |
 
 ---
 
@@ -185,6 +215,7 @@ docker-compose up --build
 | Backend | FastAPI 0.110, Uvicorn, SQLite, APScheduler |
 | פרסור | gpxpy 1.5, pandas 2.2, lxml 5.2, numpy 1.26 |
 | Garmin | garminconnect 0.2.21 + garth (טוקנים) |
+| Whoop | Whoop API v2 (OAuth2 PKCE, auto-refresh) |
 | Frontend | React 18, Vite 5, TypeScript 5.3 |
 | UI | Tailwind CSS 3.4 (CDN), Lucide icons |
 | גרפים | Recharts 3.9 |
