@@ -5,8 +5,25 @@ from db import exists_garmin_id, insert_run, get_conn
 from parser import parse_gpx_bytes
 
 load_dotenv()
-TOKEN_DIR = os.getenv("GARMIN_TOKEN_DIR","./tokens")
+TOKEN_DIR = os.getenv("GARMIN_TOKEN_DIR", "./tokens")
 os.makedirs(TOKEN_DIR, exist_ok=True)
+
+
+def link_whoop_to_run(run_data):
+    """After saving a run, try to link Whoop HR data for the same time window."""
+    try:
+        from linker import get_whoop_for_run, interpolate_hr
+        from datetime import datetime
+        conn = get_conn()
+        run_date = (run_data.get("date") or "")[:10]
+        if run_date:
+            run_start = datetime.fromisoformat(run_date + "T12:00:00+00:00")
+            rec, sleep, cyc, hr24 = get_whoop_for_run(conn, run_start)
+            if hr24:
+                print(f"[Linker] Found {len(hr24)} Whoop HR points for {run_date}")
+        conn.close()
+    except Exception as e:
+        print(f"[Linker] Whoop link failed (non-fatal): {e}")
 
 def get_client():
     from garminconnect import Garmin
@@ -63,6 +80,7 @@ def sync(limit=10):
             # remove None values for sqlite
             run_data = {k: (v if v is not None else 0) if k not in ["points_json","laps_json","raw_stats_json","date","duration_str","avg_pace_min_km","file_name"] else v for k,v in run_data.items()}
             insert_run(run_data)
+            link_whoop_to_run(run_data)
             new_count+=1
         except Exception as ex:
             print(f"Failed {gid}: {ex}")

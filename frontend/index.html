@@ -1,46 +1,16 @@
 <!doctype html>
 <html lang="he" dir="rtl">
-<head>
-<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Volkov Run Lab</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800;900&display=swap" rel="stylesheet"/>
-<script>
-  // ── Design tokens: LIGHT theme ────────────────────────────
-  // מקור: דוח העיצוב (Heebo, אדום/ירוק/ענבר, משטחים בהירים).
-  // חייב לרוץ *לפני* סקריפט ה-CDN. ה-Play CDN קורא את הגלובל `tailwind.config`.
-  tailwind = { config: {
-    theme: {
-      extend: {
-        fontFamily: {
-          sans: ['Heebo', 'system-ui', 'sans-serif'],
-          mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
-        },
-        colors: {
-          surface: '#f8f7f5',   // רקע אפליקציה חמים
-          card:    '#ffffff',   // כרטיסים
-          line:    '#e5e7eb',   // גבולות
-          ink:     '#18181b',   // טקסט ראשי
-          muted:   '#71717a',   // טקסט משני
-          faint:   '#9ca3af',   // טקסט חלש
-          accent:  '#ef4444',   // אדום — פעולה ראשית
-          up:      '#f59e0b',   // ענבר — עלייה
-          down:    '#3b82f6',   // כחול — ירידה
-          good:    '#22c55e',   // ירוק — חיובי
-        },
-      },
-    },
-    // הטוקנים מופיעים בתוך template-strings/תנאים ב-tsx — safelist מבטיח שה-JIT ייצר אותם.
-    safelist: [
-      'bg-surface','bg-card','border-line','text-ink','text-muted','text-faint',
-      'bg-accent','text-accent','border-accent','hover:border-accent',
-      'text-up','text-down','text-good','bg-good/20','bg-accent/20','border-accent/50',
-    ],
-  }}
-</script>
-<script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-surface"><div id="root"></div><script type="module" src="/src/main.tsx"></script></body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Volkov Run Lab</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  </head>
+  <body class="bg-paper text-zinc-900 antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>

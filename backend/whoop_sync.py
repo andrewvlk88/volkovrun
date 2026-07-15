@@ -270,14 +270,42 @@ def _sync_cycles(days=7):
     return count
 
 
+def _sync_heart_rate(days=1):
+    """Fetch 24h heart rate data from Whoop API."""
+    end = datetime.utcnow()
+    start = end - timedelta(days=days)
+    data = _api_get("v2/activity/heart_rate", {
+        "start": start.strftime("%Y-%m-%dT00:00:00.000Z"),
+        "end": end.strftime("%Y-%m-%dT23:59:59.000Z"),
+    })
+    conn = get_conn()
+    count = 0
+    for item in data.get("records", []):
+        ts_utc = item.get("timestamp")
+        hr = item.get("heart_rate")
+        if ts_utc and hr:
+            try:
+                conn.execute(
+                    "INSERT OR REPLACE INTO whoop_heart_rate (ts_utc, hr) VALUES (?, ?)",
+                    (ts_utc, hr),
+                )
+                count += 1
+            except Exception as e:
+                print(f"[Whoop] HR insert error: {e}")
+    conn.commit()
+    conn.close()
+    return count
+
+
 def sync(days=7):
-    """Sync Whoop data: recovery, sleep, cycles for the last N days."""
+    """Sync Whoop data: recovery, sleep, cycles, heart rate for the last N days."""
     _ensure_tables()
     r = _sync_recovery(days)
     s = _sync_sleep(days)
     c = _sync_cycles(days)
-    print(f"[Whoop] Sync done: {r} recovery, {s} sleep, {c} cycles")
-    return {"recovery": r, "sleep": s, "cycle": c}
+    h = _sync_heart_rate(days=1)
+    print(f"[Whoop] Sync done: {r} recovery, {s} sleep, {c} cycles, {h} HR points")
+    return {"recovery": r, "sleep": s, "cycle": c, "hr": h}
 
 
 if __name__ == "__main__":

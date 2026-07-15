@@ -44,6 +44,64 @@ def init_db():
       last_activity_id INTEGER
     );
     """)
+    # Whoop tables
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS whoop_heart_rate (
+      id INTEGER PRIMARY KEY,
+      ts_utc TEXT NOT NULL,
+      hr INTEGER NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_whoop_hr_ts ON whoop_heart_rate(ts_utc)")
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS whoop_recovery (
+      id INTEGER PRIMARY KEY,
+      cycle_id INTEGER UNIQUE,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      recovery_score INTEGER,
+      resting_heart_rate REAL,
+      hrv_rmssd_ms REAL,
+      spo2_pct REAL,
+      skin_temp_c REAL,
+      sleep_need_str INTEGER,
+      day_strain REAL,
+      raw_json TEXT
+    );
+    """)
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS whoop_sleep (
+      id INTEGER PRIMARY KEY,
+      sleep_id INTEGER UNIQUE,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      date TEXT,
+      sleep_performance_pct REAL,
+      sleep_efficiency_pct REAL,
+      total_in_bed_milli INTEGER,
+      total_awake_milli INTEGER,
+      total_sleep_milli INTEGER,
+      deep_sleep_milli INTEGER,
+      rem_sleep_milli INTEGER,
+      light_sleep_milli INTEGER,
+      awake_milli INTEGER,
+      sleep_need_milli INTEGER,
+      raw_json TEXT
+    );
+    """)
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS whoop_cycle (
+      id INTEGER PRIMARY KEY,
+      cycle_id INTEGER UNIQUE,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      date TEXT,
+      strain REAL,
+      kilojoule REAL,
+      avg_heart_rate INTEGER,
+      max_heart_rate INTEGER,
+      energy_burned_cal REAL,
+      raw_json TEXT
+    );
+    """)
     conn.commit()
     conn.close()
 

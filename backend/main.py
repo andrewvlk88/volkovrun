@@ -5,6 +5,8 @@ from db import init_db, list_runs, get_run, delete_run, insert_run, get_conn
 from parser import parse_gpx_bytes, parse_kml_bytes, parse_csv_bytes
 from garmin_sync import sync as garmin_sync_func
 from whoop_sync import sync as whoop_sync_func
+from linker import build_unified_timeline, get_whoop_for_run
+from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
 
@@ -89,6 +91,22 @@ def api_get_run(run_id: int):
     r = get_run(run_id)
     if not r:
         raise HTTPException(404, "Not found")
+    # Attach Whoop data if available
+    try:
+        run_date = r.get("date", "")[:10]
+        if run_date:
+            conn = get_conn()
+            run_start_utc = datetime.fromisoformat(run_date + "T12:00:00+00:00")
+            rec, sleep, cyc, _ = get_whoop_for_run(conn, run_start_utc)
+            conn.close()
+            r["whoop"] = {
+                "recovery": dict(rec) if rec else None,
+                "sleep": dict(sleep) if sleep else None,
+                "cycle": dict(cyc) if cyc else None,
+            }
+    except Exception as e:
+        print(f"[Whoop] Link failed for run {run_id}: {e}")
+        r["whoop"] = None
     return r
 
 @app.delete("/api/runs/{run_id}")
@@ -142,3 +160,47 @@ def api_whoop_cycle(limit: int = 30):
     rows = conn.execute("SELECT cycle_id, date, strain, kilojoule, avg_heart_rate, max_heart_rate, energy_burned_cal, created_at FROM whoop_cycle ORDER BY date DESC LIMIT ?", (limit,)).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+# === Timeline — Whoop + Garmin unified ===
+
+@app.get("/api/timeline")
+def api_timeline(date: str):
+    """date = 2026-07-14 (IDT date). Returns unified Whoop+Garmin timeline."""
+    conn = get_conn()
+    try:
+        # Get runs for that date
+        runs = list_runs(1000)
+        date_runs = [r for r in runs if (r.get("date", "") or "")[:10] == date]
+
+        # Get Whoop data for that date
+        run_start_utc = datetime.fromisoformat(date + "T12:00:00+00:00")
+        rec, sleep, cyc, hr24 = get_whoop_for_run(conn, run_start_utc)
+
+        # Build garmin points from all runs on that date
+        all_points = []
+        for r in date_runs:
+            full_run = get_run(r["id"])
+            if full_run:
+                pts = json.loads(full_run.get("points_json", "[]"))
+                for p in pts:
+                    all_points.append({
+                        "t_utc": datetime.fromisoformat(p.get("time_iso", date + "T12:00:00+00:00")),
+                        "hr": p.get("hr", 0),
+                        "ele": p.get("ele", 0),
+                        "speed": p.get("speed_kmh", 0),
+                        "pace": p.get("pace", ""),
+                    })
+
+        whoop_stream = [
+            {"ts_utc": datetime.fromisoformat(row[0]), "hr": row[1]}
+            for row in hr24
+        ] if hr24 else []
+
+        unified = build_unified_timeline(all_points, whoop_stream, rec, sleep, cyc)
+        unified["runs"] = date_runs
+        return unified
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        raise HTTPException(500, f"Timeline failed: {e}")
+    finally:
+        conn.close()
