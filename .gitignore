@@ -7,3 +7,5 @@ backend/.env
 backend/runs.db
 dist/
 .DS_Store
+backend/volkov.db
+backend/runs.db

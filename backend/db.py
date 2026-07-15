@@ -1,8 +1,7 @@
-import sqlite3
-import json
-import os
 
-DB_PATH = os.getenv("DATABASE_URL", "./runs.db")
+import sqlite3, os, json
+from datetime import datetime
+DB_PATH = "volkov.db"
 
 def get_conn():
     conn = sqlite3.connect(DB_PATH)
@@ -11,132 +10,89 @@ def get_conn():
 
 def init_db():
     conn = get_conn()
-    conn.execute("""
+    cur = conn.cursor()
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS runs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      garmin_activity_id INTEGER UNIQUE,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      file_name TEXT,
-      date TEXT,
-      distance_km REAL,
-      duration_sec INTEGER,
-      duration_str TEXT,
-      avg_pace_min_km TEXT,
-      avg_hr INTEGER,
-      max_hr INTEGER,
-      avg_power INTEGER,
-      avg_cadence INTEGER,
-      total_ascent REAL,
-      total_descent REAL,
-      avg_gct INTEGER,
-      avg_stride REAL,
-      shoes TEXT DEFAULT 'EVO SL',
-      is_continuous BOOLEAN,
-      points_json TEXT,
-      laps_json TEXT,
-      raw_stats_json TEXT
-    );
-    """)
-    conn.execute("""
-    CREATE TABLE IF NOT EXISTS garmin_state (
-      id INTEGER PRIMARY KEY,
-      last_sync TEXT,
-      last_activity_id INTEGER
-    );
-    """)
-    # Whoop tables
-    conn.execute("""
-    CREATE TABLE IF NOT EXISTS whoop_heart_rate (
-      id INTEGER PRIMARY KEY,
-      ts_utc TEXT NOT NULL,
-      hr INTEGER NOT NULL,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-    """)
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_whoop_hr_ts ON whoop_heart_rate(ts_utc)")
-    conn.execute("""
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        start_time TEXT,
+        distance REAL,
+        duration REAL,
+        avg_pace TEXT,
+        avg_hr REAL,
+        max_hr REAL,
+        total_ascent REAL,
+        total_descent REAL,
+        shoes TEXT DEFAULT 'EVO SL',
+        raw_stats TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )""")
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS whoop_recovery (
-      id INTEGER PRIMARY KEY,
-      cycle_id INTEGER UNIQUE,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      recovery_score INTEGER,
-      resting_heart_rate REAL,
-      hrv_rmssd_ms REAL,
-      spo2_pct REAL,
-      skin_temp_c REAL,
-      sleep_need_str INTEGER,
-      day_strain REAL,
-      raw_json TEXT
-    );
-    """)
-    conn.execute("""
+        id INTEGER PRIMARY KEY,
+        date TEXT,
+        recovery_score REAL,
+        resting_heart_rate REAL,
+        hrv_rmssd_ms REAL,
+        spo2_pct REAL,
+        skin_temp_c REAL,
+        day_strain REAL
+    )""")
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS whoop_sleep (
-      id INTEGER PRIMARY KEY,
-      sleep_id INTEGER UNIQUE,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      date TEXT,
-      sleep_performance_pct REAL,
-      sleep_efficiency_pct REAL,
-      total_in_bed_milli INTEGER,
-      total_awake_milli INTEGER,
-      total_sleep_milli INTEGER,
-      deep_sleep_milli INTEGER,
-      rem_sleep_milli INTEGER,
-      light_sleep_milli INTEGER,
-      awake_milli INTEGER,
-      sleep_need_milli INTEGER,
-      raw_json TEXT
-    );
-    """)
-    conn.execute("""
+        id INTEGER PRIMARY KEY,
+        date TEXT,
+        start TEXT,
+        end TEXT,
+        total_sleep_milli INTEGER,
+        sleep_performance_pct REAL,
+        deep_sleep_milli INTEGER,
+        rem_sleep_milli INTEGER,
+        light_sleep_milli INTEGER
+    )""")
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS whoop_cycle (
-      id INTEGER PRIMARY KEY,
-      cycle_id INTEGER UNIQUE,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      date TEXT,
-      strain REAL,
-      kilojoule REAL,
-      avg_heart_rate INTEGER,
-      max_heart_rate INTEGER,
-      energy_burned_cal REAL,
-      raw_json TEXT
-    );
-    """)
+        id INTEGER PRIMARY KEY,
+        start TEXT,
+        end TEXT,
+        strain REAL,
+        kilojoule REAL,
+        avg_heart_rate REAL,
+        max_heart_rate REAL
+    )""")
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS whoop_heart_rate (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts_utc TEXT NOT NULL,
+        hr INTEGER NOT NULL,
+        date TEXT
+    )""")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_whoop_hr_ts ON whoop_heart_rate(ts_utc)")
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS points (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id INTEGER,
+        t REAL,
+        lat REAL,
+        lon REAL,
+        ele REAL,
+        ele_smooth REAL,
+        hr INTEGER,
+        speed REAL,
+        pace REAL,
+        dist REAL,
+        FOREIGN KEY(run_id) REFERENCES runs(id)
+    )""")
     conn.commit()
     conn.close()
 
-def insert_run(run_data: dict):
-    conn = get_conn()
-    cols = ",".join(run_data.keys())
-    placeholders = ",".join(["?"]*len(run_data))
-    sql = f"INSERT OR REPLACE INTO runs ({cols}) VALUES ({placeholders})"
-    conn.execute(sql, list(run_data.values()))
-    conn.commit()
-    row_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    conn.close()
-    return row_id
-
-def list_runs(limit=1000):
-    conn = get_conn()
-    rows = conn.execute("SELECT id, garmin_activity_id, created_at, file_name, date, distance_km, duration_sec, duration_str, avg_pace_min_km, avg_hr, max_hr, total_ascent, is_continuous FROM runs ORDER BY date DESC LIMIT ?", (limit,)).fetchall()
+def get_runs():
+    conn=get_conn()
+    rows=conn.execute("SELECT * FROM runs ORDER BY start_time DESC").fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
-def get_run(run_id: int):
-    conn = get_conn()
-    row = conn.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
+def get_run(run_id):
+    conn=get_conn()
+    row=conn.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
     conn.close()
-    if not row: return None
-    return dict(row)
-
-def delete_run(run_id: int):
-    conn = get_conn()
-    conn.execute("DELETE FROM runs WHERE id=?", (run_id,))
-    conn.commit()
-    conn.close()
-
-def exists_garmin_id(garmin_id: int) -> bool:
-    conn = get_conn()
-    r = conn.execute("SELECT 1 FROM runs WHERE garmin_activity_id=?", (garmin_id,)).fetchone()
-    conn.close()
-    return r is not None
+    return dict(row) if row else None

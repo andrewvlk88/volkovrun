@@ -1,1 +1,11 @@
-export function parseGPXText(text:string){const p=new DOMParser();const xml=p.parseFromString(text,'text/xml');return [...xml.getElementsByTagName('trkpt')].map(el=>({lat:parseFloat(el.getAttribute('lat')||'0'),lon:parseFloat(el.getAttribute('lon')||'0'),ele:parseFloat(el.getElementsByTagName('ele')[0]?.textContent||'0'),time:el.getElementsByTagName('time')[0]?.textContent||'',hr:parseInt(el.getElementsByTagName('hr')[0]?.textContent||'0')}))}
+import { haversine } from './haversine'
+export function movingAverage(arr:number[], w=15){
+  // edge-padded convolution - מונעת רמפות מלאכותיות
+  const padded=[...Array(Math.floor(w/2)).fill(arr[0]), ...arr, ...Array(Math.floor(w/2)).fill(arr[arr.length-1])]
+  const res=[]
+  for(let i=0;i<arr.length;i++){
+    const slice=padded.slice(i,i+w)
+    res.push(slice.reduce((a,b)=>a+b,0)/w)
+  }
+  return res
+}

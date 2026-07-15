@@ -1,176 +1,247 @@
-import math
-import json
-import re
-import xml.etree.ElementTree as ET
-from datetime import datetime
 
+import math
+import numpy as np
+
+# לוגיקה קריטית - לא לגעת לפי README
 def haversine(lat1, lon1, lat2, lon2):
-    R = 6371000
-    phi1 = math.radians(lat1); phi2 = math.radians(lat2)
-    dphi = math.radians(lat2-lat1); dlambda = math.radians(lon2-lon1)
-    a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
+    R = 6371000.0
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlam = math.radians(lon2 - lon1)
+    a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlam/2)**2
     return 2*R*math.asin(math.sqrt(a))
 
 def moving_average(arr, w=15):
-    if len(arr) < w: return arr
-    import numpy as np
-    a = np.array(arr, dtype=float)
-    # Edge-padded convolution to avoid artificial ramps at start/end
-    padded = np.pad(a, (w//2, w//2), mode='edge')
-    result = np.convolve(padded, np.ones(w)/w, mode='valid')
-    return list(result[:len(arr)])
+    # edge-padded convolution - מונעת רמפות מלאכותיות
+    if len(arr) < w:
+        return np.array(arr)
+    padded = np.pad(arr, (w//2, w//2), mode='edge')
+    kernel = np.ones(w)/w
+    return np.convolve(padded, kernel, mode='valid')[:len(arr)]
 
-def build_stats_from_points(raw_points):
-    import numpy as np
-    if not raw_points: return {"distance_km":0,"duration_sec":0,"duration_str":"0:00","avg_pace":"--","avg_hr":0,"max_hr":0,"total_ascent":0,"is_continuous":False,"points":[]}
-    # times
-    times = []
-    for p in raw_points:
-        t = p.get("_time_obj")
-        times.append(t)
-    start = next((t for t in times if t), None)
-    dist_cum = 0
-    out = []
-    prev = None
-    for i, p in enumerate(raw_points):
-        lat, lon, ele = p["lat"], p["lon"], p.get("ele",0)
-        sec = (times[i]-start).total_seconds() if times[i] and start else float(i)
-        speed = 0; pace = 0
-        if prev:
-            d = haversine(prev["lat"], prev["lon"], lat, lon)
-            dt = 1
-            if times[i] and prev.get("_t"):
-                dt = (times[i]-prev["_t"]).total_seconds() or 1
-            if dt>0:
-                speed = d/dt*3.6
-                if d>0: pace = (dt/60)/(d/1000)
-            dist_cum += d
-        out.append({
-            "lat": lat, "lon": lon, "ele": ele,
-            "hr": p.get("hr",0) or 0,
-            "cad": p.get("cad",0) or 0,
-            "dist_km": dist_cum/1000,
-            "time_sec": sec,
-            "speed_kmh": min(speed, 30),
-            "pace_min": pace
-        })
-        prev = {"lat": lat, "lon": lon, "_t": times[i]}
-    eles = [o["ele"] for o in out]
-    ele_smooth = moving_average(eles, 15)
-    for i, o in enumerate(out):
-        o["ele_smooth"] = float(ele_smooth[i]) if i < len(ele_smooth) else float(o["ele"])
-    # Stronger smoothing + threshold-based ascent calculation
-    # Garmin reports net ascent per climb, not sum of every GPS jitter
-    ele_smooth = moving_average(eles, 30)  # wider window = less noise
-    for i, o in enumerate(out):
-        o["ele_smooth"] = float(ele_smooth[i]) if i < len(ele_smooth) else float(o["ele"])
-    
-    # Ascent calculation: sample elevation at 60-second intervals
-    # then count only sustained climbs >= 2m between samples
-    # Edge-padded smoothing + 60s sampling filters GPS jitter effectively
-    total_ascent = 0
-    if len(out) > 2:
-        sample_interval = 60  # seconds
-        sampled = []
-        last_t = -999
-        for o in out:
-            t = o.get("time_sec", 0)
-            if t - last_t >= sample_interval or not sampled:
-                sampled.append(o.get("ele_smooth", o.get("ele", 0)))
-                last_t = t
-        if not sampled:
-            sampled = [o.get("ele_smooth", o.get("ele", 0)) for o in out]
-        
-        valley = sampled[0]
-        peak = sampled[0]
-        for i in range(1, len(sampled)):
-            if sampled[i] > peak:
-                peak = sampled[i]
-            elif sampled[i] < peak - 2.0:
-                if peak - valley >= 2.0:
-                    total_ascent += (peak - valley)
-                valley = sampled[i]
-                peak = sampled[i]
-        if peak - valley >= 2.0:
-            total_ascent += (peak - valley)
-    total_ascent = round(total_ascent, 1)
-    duration = out[-1]["time_sec"] if out else 0
-    distance = out[-1]["dist_km"] if out else 0
-    avg_hr = int(np.mean([o["hr"] for o in out if o["hr"]>0])) if any(o["hr"] for o in out) else 0
-    max_hr = max([o["hr"] for o in out], default=0)
-    is_continuous = duration >= 18*60 and duration <= 45*60
+def calc_ascent(elevations, times):
+    # דגימה כל 60 שניות + עליות מתמשכות >=2 מטר
+    if not elevations:
+        return 0
+    sampled=[]
+    last_t=times[0]
+    for i,t in enumerate(times):
+        if t - last_t >= 60 or i==0:
+            sampled.append(elevations[i])
+            last_t=t
+    ascent=0
+    for i in range(1,len(sampled)):
+        diff=sampled[i]-sampled[i-1]
+        if diff >= 2:
+            ascent+=diff
+    return ascent
+
+
+def parse_gpx_bytes(data: bytes) -> dict:
+    """Parse GPX file bytes — returns stats + points list. Uses haversine + moving_average."""
+    import gpxpy
+    import xml.etree.ElementTree as ET
+
+    gpx = gpxpy.parse(data.decode('utf-8', errors='ignore'))
+    points = []
+    times_raw = []
+    lats, lons, elevs, hrs = [], [], [], []
+
+    ns = {'gpx': 'http://www.topografix.com/GPX/1/1'}
+    root = ET.fromstring(data.decode('utf-8', errors='ignore'))
+
+    for trk in gpx.tracks:
+        for seg in trk.segments:
+            for i, pt in enumerate(seg.points):
+                lat = pt.latitude
+                lon = pt.longitude
+                ele = pt.elevation or 0
+                t = pt.time
+                hr = 0
+                # try to get HR from extensions
+                ext = pt.extensions
+                if ext:
+                    for child in ext:
+                        for c in child:
+                            if 'hr' in c.tag.lower():
+                                try:
+                                    hr = int(c.text)
+                                except:
+                                    pass
+                points.append({
+                    'lat': lat, 'lon': lon, 'ele': ele, 'hr': hr,
+                    'time_iso': t.isoformat() if t else '',
+                    'time_sec': 0, 'dist_km': 0, 'speed_kmh': 0, 'pace': 0,
+                    'ele_smooth': 0,
+                })
+                lats.append(lat)
+                lons.append(lon)
+                elevs.append(ele)
+                hrs.append(hr)
+                times_raw.append(t.timestamp() if t else i)
+
+    if len(points) < 2:
+        return {'distance_km': 0, 'duration_sec': 0, 'duration_str': '', 'avg_pace': '',
+                'avg_hr': 0, 'max_hr': 0, 'total_ascent': 0, 'is_continuous': False, 'points': points}
+
+    # Distance via haversine
+    dist_m = 0
+    for i in range(1, len(points)):
+        d = haversine(lats[i-1], lons[i-1], lats[i], lons[i])
+        dist_m += d
+        points[i]['dist_km'] = round(dist_m / 1000, 3)
+
+    # Time
+    t0 = times_raw[0]
+    for i in range(len(points)):
+        points[i]['time_sec'] = times_raw[i] - t0
+
+    total_sec = times_raw[-1] - t0
+
+    # Speed & pace
+    for i in range(1, len(points)):
+        dt = points[i]['time_sec'] - points[i-1]['time_sec']
+        dd = points[i]['dist_km'] - points[i-1]['dist_km']
+        if dt > 0:
+            points[i]['speed_kmh'] = round(dd / dt * 3600, 1)
+            pace_sec = dt / dd if dd > 0 else 0
+            points[i]['pace'] = f"{int(pace_sec//60)}:{int(pace_sec%60):02d}"
+
+    # Elevation smoothing
+    if len(elevs) > 30:
+        smooth = moving_average(np.array(elevs, dtype=float), 30)
+    else:
+        smooth = moving_average(np.array(elevs, dtype=float), 15)
+    for i in range(len(points)):
+        points[i]['ele_smooth'] = round(float(smooth[i]), 1)
+
+    # Ascent
+    ascent = calc_ascent(elevs, times_raw)
+
+    # HR
+    avg_hr = int(np.mean([h for h in hrs if h > 0])) if any(h > 0 for h in hrs) else 0
+    max_hr = max(hrs) if hrs else 0
+
+    # Duration
+    mins = int(total_sec // 60)
+    secs = int(total_sec % 60)
+    duration_str = f"{mins}:{secs:02d}"
+
+    # Pace
+    dist_km = dist_m / 1000
+    avg_pace = ''
+    if dist_km > 0 and total_sec > 0:
+        pace_sec = total_sec / dist_km
+        avg_pace = f"{int(pace_sec//60)}:{int(pace_sec%60):02d}"
+
+    is_continuous = 18*60 <= total_sec <= 45*60
+
     return {
-        "points": out[::max(1, len(out)//600)],
-        "distance_km": round(distance,2),
-        "duration_sec": int(duration),
-        "duration_str": f"{int(duration//60)}:{int(duration%60):02d}",
-        "avg_pace": f"{int(duration//60/distance) if distance>0 else 0}:{int((duration/distance)%60) if distance>0 else 0:02d}" if distance>0 else "--",
-        "avg_hr": avg_hr, "max_hr": max_hr,
-        "total_ascent": round(total_ascent,1),
-        "is_continuous": is_continuous
+        'distance_km': round(dist_km, 2),
+        'duration_sec': int(total_sec),
+        'duration_str': duration_str,
+        'avg_pace': avg_pace,
+        'avg_hr': avg_hr,
+        'max_hr': max_hr,
+        'total_ascent': round(ascent, 1),
+        'is_continuous': is_continuous,
+        'points': points,
     }
 
-def parse_gpx_bytes(data: bytes):
-    import gpxpy
-    gpx = gpxpy.parse(data.decode('utf-8', errors='ignore'))
-    raw = []
-    for track in gpx.tracks:
-        for seg in track.segments:
-            for p in seg.points:
-                hr = 0; cad = 0
-                if p.extensions:
-                    for ext in p.extensions:
-                        # Garmin extensions
-                        try:
-                            for elem in ext.iter():
-                                if elem.tag.endswith('}hr'): hr = int(float(elem.text))
-                                if elem.tag.endswith('}cad'): cad = int(float(elem.text))
-                        except: pass
-                raw.append({"lat": p.latitude, "lon": p.longitude, "ele": p.elevation or 0, "_time_obj": p.time, "hr": hr, "cad": cad})
-    return build_stats_from_points(raw)
 
-def parse_kml_bytes(data: bytes):
+def parse_kml_bytes(data: bytes) -> dict:
+    """Parse KML file bytes — basic extraction."""
+    from lxml import etree
+    root = etree.fromstring(data)
+    ns = {'kml': 'http://www.opengis.net/kml/2.2'}
+    coords_text = ''
+    for pm in root.findall('.//kml:Placemark', ns):
+        for geom in pm.findall('.//kml:coordinates', ns):
+            coords_text = geom.text or ''
+            break
+    if not coords_text:
+        # try without namespace
+        for geom in root.iter():
+            if 'coordinates' in (geom.tag or ''):
+                coords_text = geom.text or ''
+                break
+    points = []
+    lats, lons, elevs = [], [], []
+    for line in coords_text.strip().split('\n'):
+        parts = line.strip().split(',')
+        if len(parts) >= 2:
+            lon, lat = float(parts[0]), float(parts[1])
+            ele = float(parts[2]) if len(parts) > 2 else 0
+            points.append({'lat': lat, 'lon': lon, 'ele': ele, 'hr': 0, 'time_sec': 0, 'dist_km': 0, 'speed_kmh': 0, 'pace': 0, 'ele_smooth': 0, 'time_iso': ''})
+            lats.append(lat)
+            lons.append(lon)
+            elevs.append(ele)
+    if len(points) < 2:
+        return {'distance_km': 0, 'duration_sec': 0, 'duration_str': '', 'avg_pace': '', 'avg_hr': 0, 'max_hr': 0, 'total_ascent': 0, 'is_continuous': False, 'points': points}
+    dist_m = 0
+    for i in range(1, len(points)):
+        d = haversine(lats[i-1], lons[i-1], lats[i], lons[i])
+        dist_m += d
+        points[i]['dist_km'] = round(dist_m / 1000, 3)
+    if len(elevs) > 30:
+        smooth = moving_average(np.array(elevs, dtype=float), 30)
+    else:
+        smooth = moving_average(np.array(elevs, dtype=float), 15)
+    for i in range(len(points)):
+        points[i]['ele_smooth'] = round(float(smooth[i]), 1)
+    ascent = calc_ascent(elevs, list(range(len(elevs))))
+    return {
+        'distance_km': round(dist_m / 1000, 2),
+        'duration_sec': 0,
+        'duration_str': '',
+        'avg_pace': '',
+        'avg_hr': 0,
+        'max_hr': 0,
+        'total_ascent': round(ascent, 1),
+        'is_continuous': False,
+        'points': points,
+    }
+
+
+def parse_csv_bytes(data: bytes) -> dict:
+    """Parse CSV — basic."""
+    import csv, io
     text = data.decode('utf-8', errors='ignore')
-    coords_blocks = re.findall(r"<coordinates>(.*?)</coordinates>", text, re.DOTALL)
-    raw=[]
-    for block in coords_blocks:
-        for pair in block.strip().split():
-            parts = pair.split(",")
-            if len(parts)>=2:
-                try:
-                    lon=float(parts[0]); lat=float(parts[1]); alt=float(parts[2]) if len(parts)>2 else 0
-                    raw.append({"lat": lat, "lon": lon, "ele": alt, "_time_obj": None, "hr":0,"cad":0})
-                except: pass
-    # synthesize times if missing
-    for i, p in enumerate(raw):
-        p["_time_obj"] = None
-    return build_stats_from_points(raw)
-
-def parse_csv_bytes(data: bytes):
-    import pandas as pd, io
-    s = data.decode('utf-8', errors='ignore')
-    try:
-        df = pd.read_csv(io.StringIO(s))
-    except:
-        return {"distance_km":0,"duration_sec":0,"duration_str":"0:00","avg_pace":"--","avg_hr":0,"max_hr":0,"total_ascent":0,"is_continuous":False,"points":[],"laps":[]}
-    if 'Laps' in df.columns:
-        # Garmin export format from earlier
-        summary = df[df['Laps'].astype(str).str.lower()=='summary']
-        if not summary.empty:
-            row = summary.iloc[0]
-            try:
-                dist = float(row.get('Distance km',0))
-            except: dist=0
-            return {
-                "distance_km": dist,
-                "duration_sec": 0,
-                "duration_str": str(row.get('Time','')),
-                "avg_pace": str(row.get('Avg Pace min/km','')),
-                "avg_hr": int(float(row.get('Avg HR bpm',0))) if str(row.get('Avg HR bpm','')).replace('.','',1).isdigit() else 0,
-                "max_hr": int(float(row.get('Max HR bpm',0))) if str(row.get('Max HR bpm','')).replace('.','',1).isdigit() else 0,
-                "total_ascent": float(row.get('Total Ascent m',0) or 0),
-                "is_continuous": True,
-                "points": [],
-                "laps": df.to_dict(orient='records')
-            }
-    return {"distance_km":0,"duration_sec":0,"duration_str":"0:00","avg_pace":"--","avg_hr":0,"is_continuous":False,"points":[],"laps":[]}
+    reader = csv.DictReader(io.StringIO(text))
+    points = []
+    lats, lons, elevs = [], [], []
+    for i, row in enumerate(reader):
+        lat = float(row.get('lat', row.get('latitude', 0)) or 0)
+        lon = float(row.get('lon', row.get('longitude', 0)) or 0)
+        ele = float(row.get('ele', row.get('elevation', 0)) or 0)
+        hr = int(float(row.get('hr', row.get('heart_rate', 0)) or 0))
+        points.append({'lat': lat, 'lon': lon, 'ele': ele, 'hr': hr, 'time_sec': i, 'dist_km': 0, 'speed_kmh': 0, 'pace': 0, 'ele_smooth': 0, 'time_iso': ''})
+        lats.append(lat)
+        lons.append(lon)
+        elevs.append(ele)
+    if len(points) < 2:
+        return {'distance_km': 0, 'duration_sec': 0, 'duration_str': '', 'avg_pace': '', 'avg_hr': 0, 'max_hr': 0, 'total_ascent': 0, 'is_continuous': False, 'points': points}
+    dist_m = 0
+    for i in range(1, len(points)):
+        d = haversine(lats[i-1], lons[i-1], lats[i], lons[i])
+        dist_m += d
+        points[i]['dist_km'] = round(dist_m / 1000, 3)
+    if len(elevs) > 30:
+        smooth = moving_average(np.array(elevs, dtype=float), 30)
+    else:
+        smooth = moving_average(np.array(elevs, dtype=float), 15)
+    for i in range(len(points)):
+        points[i]['ele_smooth'] = round(float(smooth[i]), 1)
+    ascent = calc_ascent(elevs, list(range(len(elevs))))
+    return {
+        'distance_km': round(dist_m / 1000, 2),
+        'duration_sec': 0,
+        'duration_str': '',
+        'avg_pace': '',
+        'avg_hr': 0,
+        'max_hr': 0,
+        'total_ascent': round(ascent, 1),
+        'is_continuous': False,
+        'points': points,
+    }
