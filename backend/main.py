@@ -1,9 +1,10 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import json
-from db import init_db, list_runs, get_run, delete_run, insert_run
+from db import init_db, list_runs, get_run, delete_run, insert_run, get_conn
 from parser import parse_gpx_bytes, parse_kml_bytes, parse_csv_bytes
 from garmin_sync import sync as garmin_sync_func
+from whoop_sync import sync as whoop_sync_func
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
 
@@ -20,10 +21,18 @@ def scheduled_garmin_sync():
     except Exception as e:
         print(f"[Scheduler] Garmin sync failed: {e}")
 
+def scheduled_whoop_sync():
+    try:
+        result = whoop_sync_func(days=1)
+        print(f"[Scheduler] Whoop sync done: {result}")
+    except Exception as e:
+        print(f"[Scheduler] Whoop sync failed: {e}")
+
 @app.on_event("startup")
 def startup():
     init_db()
     scheduler.add_job(scheduled_garmin_sync, 'interval', minutes=30, id='garmin_sync')
+    scheduler.add_job(scheduled_whoop_sync, 'interval', minutes=15, id='whoop_sync')
     scheduler.start()
 
 @app.on_event("shutdown")
@@ -101,3 +110,35 @@ def api_summary():
     runs = list_runs(1000)
     total_km = sum((r["distance_km"] or 0) for r in runs)
     return {"total_runs": len(runs), "total_km": round(total_km,2), "runs": runs}
+
+# === Whoop ===
+
+@app.post("/api/sync/whoop")
+def api_sync_whoop(days: int = 7):
+    try:
+        result = whoop_sync_func(days)
+        return {"synced": result}
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        raise HTTPException(500, f"Whoop sync failed: {e}")
+
+@app.get("/api/whoop/recovery")
+def api_whoop_recovery(limit: int = 30):
+    conn = get_conn()
+    rows = conn.execute("SELECT cycle_id, recovery_score, resting_heart_rate, hrv_rmssd_ms, spo2_pct, skin_temp_c, day_strain, created_at FROM whoop_recovery ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+@app.get("/api/whoop/sleep")
+def api_whoop_sleep(limit: int = 30):
+    conn = get_conn()
+    rows = conn.execute("SELECT sleep_id, date, sleep_performance_pct, sleep_efficiency_pct, total_sleep_milli, deep_sleep_milli, rem_sleep_milli, light_sleep_milli, sleep_need_milli, created_at FROM whoop_sleep ORDER BY date DESC LIMIT ?", (limit,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+@app.get("/api/whoop/cycle")
+def api_whoop_cycle(limit: int = 30):
+    conn = get_conn()
+    rows = conn.execute("SELECT cycle_id, date, strain, kilojoule, avg_heart_rate, max_heart_rate, energy_burned_cal, created_at FROM whoop_cycle ORDER BY date DESC LIMIT ?", (limit,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
