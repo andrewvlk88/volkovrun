@@ -97,6 +97,8 @@ async def upload(file: UploadFile = File(...)):
             stats = parser.parse_gpx_bytes(data)
         elif fname.endswith(".kml") or b"<kml" in data[:800]:
             stats = parser.parse_kml_bytes(data)
+        elif fname.endswith(".tcx") or b"TrainingCenterDatabase" in data[:800]:
+            stats = parser.parse_tcx_bytes(data)
         elif fname.endswith(".csv") or fname.endswith(".txt"):
             if b"<gpx" in data[:800] or b"<kml" in data[:800]:
                 try: stats = parser.parse_gpx_bytes(data)

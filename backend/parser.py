@@ -245,3 +245,115 @@ def parse_csv_bytes(data: bytes) -> dict:
         'is_continuous': False,
         'points': points,
     }
+
+
+def parse_tcx_bytes(data: bytes) -> dict:
+    """Parse TCX file bytes — Garmin Training Center XML. Uses haversine + moving_average."""
+    from lxml import etree
+    from datetime import datetime
+
+    root = etree.fromstring(data)
+    ns = {'tcx': 'http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2'}
+
+    points = []
+    lats, lons, elevs, hrs = [], [], [], []
+    times_raw = []
+
+    for tp in root.findall('.//tcx:Trackpoint', ns):
+        pos = tp.find('tcx:Position', ns)
+        if pos is None:
+            continue
+        lat = float(pos.find('tcx:LatitudeDegrees', ns).text)
+        lon = float(pos.find('tcx:LongitudeDegrees', ns).text)
+        ele_el = tp.find('tcx:AltitudeMeters', ns)
+        ele = float(ele_el.text) if ele_el is not None else 0
+        t_el = tp.find('tcx:Time', ns)
+        t_iso = t_el.text if t_el is not None else ''
+        t = datetime.fromisoformat(t_iso.replace('Z', '+00:00')) if t_iso else None
+
+        hr = 0
+        hr_el = tp.find('.//tcx:HeartRateBpm/tcx:Value', ns)
+        if hr_el is not None:
+            try:
+                hr = int(hr_el.text)
+            except:
+                pass
+
+        points.append({
+            'lat': lat, 'lon': lon, 'ele': ele, 'hr': hr,
+            'time_iso': t_iso,
+            'time_sec': 0, 'dist_km': 0, 'speed_kmh': 0, 'pace': 0,
+            'ele_smooth': 0,
+        })
+        lats.append(lat)
+        lons.append(lon)
+        elevs.append(ele)
+        hrs.append(hr)
+        times_raw.append(t.timestamp() if t else len(points) - 1)
+
+    if len(points) < 2:
+        return {'distance_km': 0, 'duration_sec': 0, 'duration_str': '', 'avg_pace': '',
+                'avg_hr': 0, 'max_hr': 0, 'total_ascent': 0, 'is_continuous': False, 'points': points}
+
+    # Distance via haversine
+    dist_m = 0
+    for i in range(1, len(points)):
+        d = haversine(lats[i-1], lons[i-1], lats[i], lons[i])
+        dist_m += d
+        points[i]['dist_km'] = round(dist_m / 1000, 3)
+
+    # Time
+    t0 = times_raw[0]
+    for i in range(len(points)):
+        points[i]['time_sec'] = times_raw[i] - t0
+    total_sec = times_raw[-1] - t0
+
+    # Speed & pace
+    for i in range(1, len(points)):
+        dt = points[i]['time_sec'] - points[i-1]['time_sec']
+        dd = points[i]['dist_km'] - points[i-1]['dist_km']
+        if dt > 0:
+            points[i]['speed_kmh'] = round(dd / dt * 3600, 1)
+            pace_sec = dt / dd if dd > 0 else 0
+            points[i]['pace'] = f"{int(pace_sec//60)}:{int(pace_sec%60):02d}"
+
+    # Elevation smoothing
+    if len(elevs) > 30:
+        smooth = moving_average(np.array(elevs, dtype=float), 30)
+    else:
+        smooth = moving_average(np.array(elevs, dtype=float), 15)
+    for i in range(len(points)):
+        points[i]['ele_smooth'] = round(float(smooth[i]), 1)
+
+    # Ascent
+    ascent = calc_ascent(elevs, times_raw)
+
+    # HR
+    avg_hr = int(np.mean([h for h in hrs if h > 0])) if any(h > 0 for h in hrs) else 0
+    max_hr = max(hrs) if hrs else 0
+
+    # Duration
+    mins = int(total_sec // 60)
+    secs = int(total_sec % 60)
+    duration_str = f"{mins}:{secs:02d}"
+
+    # Pace
+    dist_km = dist_m / 1000
+    avg_pace = ''
+    if dist_km > 0 and total_sec > 0:
+        pace_sec = total_sec / dist_km
+        avg_pace = f"{int(pace_sec//60)}:{int(pace_sec%60):02d}"
+
+    is_continuous = 18*60 <= total_sec <= 45*60
+
+    return {
+        'distance_km': round(dist_km, 2),
+        'duration_sec': int(total_sec),
+        'duration_str': duration_str,
+        'avg_pace': avg_pace,
+        'avg_hr': avg_hr,
+        'max_hr': max_hr,
+        'total_ascent': round(ascent, 1),
+        'is_continuous': is_continuous,
+        'points': points,
+    }
