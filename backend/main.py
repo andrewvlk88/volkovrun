@@ -1,13 +1,34 @@
 
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.responses import PlainTextResponse
 from apscheduler.schedulers.background import BackgroundScheduler
-import db, parser, json
+import db, parser, json, os, secrets
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from dotenv import load_dotenv
+
+load_dotenv(override=True)
 
 app = FastAPI(title="Volkov Run Lab")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# ── Basic Auth ────────────────────────────────────────────────────────
+ADMIN_USER = os.getenv("VOLKOVRUN_USER", "andrew")
+ADMIN_PASS = os.getenv("VOLKOVRUN_PASS", "volkov2026")
+security = HTTPBasic()
+
+def check_auth(credentials: HTTPBasicCredentials = Depends(security)):
+    user_ok = secrets.compare_digest(credentials.username.encode(), ADMIN_USER.encode())
+    pass_ok = secrets.compare_digest(credentials.password.encode(), ADMIN_PASS.encode())
+    if not (user_ok and pass_ok):
+        raise HTTPException(
+            status_code=401,
+            detail="Not authorized",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
 
 scheduler = BackgroundScheduler()
 
@@ -45,11 +66,11 @@ def startup():
     # scheduler.start()
 
 @app.get("/api/runs")
-def list_runs():
+def list_runs(user: str = Depends(check_auth)):
     return db.get_runs()
 
 @app.get("/api/runs/{run_id}")
-def get_run(run_id: int):
+def get_run(run_id: int, user: str = Depends(check_auth)):
     run=db.get_run(run_id)
     if not run:
         return {"error":"not found"}
@@ -60,7 +81,7 @@ def get_run(run_id: int):
     return {**run, "points":[dict(p) for p in pts], "whoop": dict(whoop_rec) if whoop_rec else None}
 
 @app.get("/api/timeline")
-def timeline(date: str = "2026-07-14"):
+def timeline(date: str = "2026-07-14", user: str = Depends(check_auth)):
     from linker import build_unified_timeline
     import linker
     conn=db.get_conn()
@@ -89,7 +110,7 @@ def timeline(date: str = "2026-07-14"):
     return unified
 
 @app.post("/api/upload")
-async def upload(file: UploadFile = File(...)):
+async def upload(file: UploadFile = File(...), user: str = Depends(check_auth)):
     data = await file.read()
     fname = (file.filename or "").lower()
     try:
@@ -127,15 +148,15 @@ async def upload(file: UploadFile = File(...)):
     return {"id": run_id, "filename": file.filename, **stats, "points": stats.get("points",[])}
 
 @app.post("/api/sync/garmin")
-def sync_garmin(limit: int=10):
+def sync_garmin(limit: int=10, user: str = Depends(check_auth)):
     return {"status":"garmin sync triggered"}
 
 @app.post("/api/sync/whoop")
-def sync_whoop(days: int=7):
+def sync_whoop(days: int=7, user: str = Depends(check_auth)):
     return {"status":"whoop sync triggered"}
 
 @app.get("/api/whoop/recovery")
-def whoop_recovery():
+def whoop_recovery(user: str = Depends(check_auth)):
     conn=db.get_conn()
     rows=conn.execute("SELECT * FROM whoop_recovery ORDER BY date DESC").fetchall()
     conn.close()
