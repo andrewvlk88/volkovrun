@@ -140,3 +140,22 @@ def whoop_recovery():
     rows=conn.execute("SELECT * FROM whoop_recovery ORDER BY date DESC").fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+# ── Serve frontend build (production) ─────────────────────────────────
+import os
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+if os.path.isdir(FRONTEND_DIST):
+    app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    def serve_spa(full_path: str):
+        # Don't catch /api routes
+        if full_path.startswith("api"):
+            return {"error": "not found"}
+        f = os.path.join(FRONTEND_DIST, full_path)
+        if os.path.isfile(f):
+            return FileResponse(f)
+        return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
