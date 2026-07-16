@@ -106,8 +106,8 @@ export default function TimelineView({ data }: TimelineViewProps) {
   return (
     <div className="space-y-5">
       {/* ── KPI strip ─────────────────────────────────────────── */}
-      <div className="grid grid-cols-12 gap-3">
-        <div className="col-span-8 card p-5 flex items-center justify-between">
+      <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+        <div className="sm:col-span-8 card p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div>
             <div className="text-[11px] font-black tracking-widest text-zinc-500">
               WHOOP RECOVERY
@@ -146,7 +146,7 @@ export default function TimelineView({ data }: TimelineViewProps) {
             </div>
           </div>
         </div>
-        <div className="col-span-4 card p-5 bg-zinc-900 text-white">
+        <div className="sm:col-span-4 card p-4 sm:p-5 bg-zinc-900 text-white">
           <div className="text-[11px] font-black tracking-widest opacity-60">
             GARMIN RUN
           </div>
@@ -160,9 +160,9 @@ export default function TimelineView({ data }: TimelineViewProps) {
       </div>
 
       {/* ── Dual HR chart ─────────────────────────────────────── */}
-      <div className="card p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="font-black text-[20px] tracking-tighter">
+      <div className="card p-4 sm:p-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6 gap-2">
+          <h2 className="font-black text-[16px] sm:text-[20px] tracking-tighter">
             התאמת שעות — דופק כפול Whoop + Garmin
           </h2>
           <div className="flex gap-2">
@@ -170,7 +170,7 @@ export default function TimelineView({ data }: TimelineViewProps) {
             <span className="pill bg-action text-white">Garmin אדום</span>
           </div>
         </div>
-        <div className="h-[420px] w-full" dir="ltr">
+        <div className="h-[280px] sm:h-[420px] w-full" dir="ltr">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={chartData}>
               <CartesianGrid stroke="#f4f4f5" vertical={false} />
@@ -234,7 +234,7 @@ export default function TimelineView({ data }: TimelineViewProps) {
             </ComposedChart>
           </ResponsiveContainer>
         </div>
-        <div className="grid grid-cols-4 gap-3 mt-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
           <div className="pill bg-zinc-50 border text-center">
             שינה <b className="font-mono">{sleepLabel.replace('שינה ', '')}</b>
           </div>

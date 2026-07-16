@@ -43,7 +43,7 @@ export default function LapsTable({ laps }: LapsTableProps) {
       </div>
 
       {/* Header row */}
-      <div className="grid grid-cols-[28px_1fr_1fr_1fr_1fr_1fr] gap-2 text-[10px] font-black tracking-widest text-zinc-400 uppercase px-2 pb-2 border-b border-zinc-100">
+      <div className="hidden sm:grid grid-cols-[28px_1fr_1fr_1fr_1fr_1fr] gap-2 text-[10px] font-black tracking-widest text-zinc-400 uppercase px-2 pb-2 border-b border-zinc-100">
         <div>#</div>
         <div>זמן</div>
         <div>מרחק</div>

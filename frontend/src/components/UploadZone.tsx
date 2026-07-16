@@ -66,7 +66,7 @@ export default function UploadZone() {
         setDragOver(true)
       }}
       onDragLeave={() => setDragOver(false)}
-      className={`card p-6 border-2 border-dashed transition ${
+      className={`card p-4 sm:p-6 border-2 border-dashed transition ${
         dragOver
           ? 'border-action bg-action/5'
           : 'border-zinc-200 bg-zinc-50/50'
@@ -110,7 +110,7 @@ export default function UploadZone() {
               <span className="pill bg-positive text-white">הועלה</span>
               <span className="font-mono text-[12px] text-zinc-500">{fileName}</span>
             </div>
-            <div className="mt-3 flex gap-6">
+            <div className="mt-3 flex flex-wrap gap-4 sm:gap-6">
               <div>
                 <div className="text-[10px] font-black tracking-widest text-zinc-500">מרחק</div>
                 <div className="font-mono font-bold text-[20px]">

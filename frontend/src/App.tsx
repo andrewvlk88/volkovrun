@@ -106,12 +106,12 @@ function KPICard({ label, value, unit, color = 'zinc' }: KPICardProps) {
     zinc: 'text-zinc-900',
   }
   return (
-    <div className="card p-5">
+    <div className="card p-4 sm:p-5">
       <div className="text-[10px] font-black tracking-widest text-zinc-400 uppercase">
         {label}
       </div>
       <div className="flex items-baseline gap-1 mt-2">
-        <span className={`font-black text-[28px] leading-none font-mono ${colorMap[color]}`}>
+        <span className={`font-black text-[24px] sm:text-[28px] leading-none font-mono ${colorMap[color]}`}>
           {value}
         </span>
         {unit && <span className="text-[14px] text-zinc-400 font-bold">{unit}</span>}
@@ -202,19 +202,19 @@ export default function App() {
     <div className="min-h-screen bg-paper">
       {/* ── Header ───────────────────────────────────────────── */}
       <header className="sticky top-0 z-20 bg-white/80 backdrop-blur border-b border-zinc-100">
-        <div className="max-w-[1280px] mx-auto px-6 py-4 flex justify-between items-center">
-          <div className="flex items-baseline gap-3">
-            <h1 className="font-black text-[22px] tracking-tighter">VOLKOV RUN LAB</h1>
-            <span className="pill bg-zinc-900 text-white">WHOOP + GARMIN UNIFIED</span>
+        <div className="max-w-[1280px] mx-auto px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center">
+          <div className="flex items-baseline gap-2 sm:gap-3">
+            <h1 className="font-black text-[18px] sm:text-[22px] tracking-tighter">VOLKOV RUN LAB</h1>
+            <span className="hidden sm:inline-block pill bg-zinc-900 text-white">WHOOP + GARMIN</span>
           </div>
           <div className="flex gap-2">
-            <span className="pill bg-white border">EVO SL</span>
+            <span className="hidden sm:inline-block pill bg-white border">EVO SL</span>
             <span className="pill bg-action text-white">{runs.length} ריצות</span>
           </div>
         </div>
       </header>
 
-      <main className="max-w-[1280px] mx-auto px-6 py-8 space-y-6">
+      <main className="max-w-[1280px] mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
         {/* ── Run selector ─────────────────────────────────────── */}
         {runs.length > 0 && (
           <div className="flex gap-2 flex-wrap">
@@ -235,7 +235,7 @@ export default function App() {
         )}
 
         {/* ── KPI Row ──────────────────────────────────────────── */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
           <KPICard
             label="מרחק"
             value={kpiDistance ? kpiDistance.toFixed(2) : '—'}
@@ -268,8 +268,8 @@ export default function App() {
         <TimelineView data={timeline} />
 
         {/* ── Map + Laps grid ──────────────────────────────────── */}
-        <div className="grid grid-cols-12 gap-6">
-          <div className="col-span-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-8">
             <MapView
               positions={mapPositions}
               avgSpeed={mapAvgSpeed}
@@ -277,7 +277,7 @@ export default function App() {
               avgHr={kpiAvgHr}
             />
           </div>
-          <div className="col-span-4">
+          <div className="lg:col-span-4">
             {loadingRun ? (
               <div className="card p-5 text-center font-mono text-zinc-500">
                 טוען הקפות…
@@ -294,7 +294,7 @@ export default function App() {
             <span className="pill bg-info text-white">INSIGHTS</span>
             <h2 className="font-black text-[18px] tracking-tighter">תובנות אימון</h2>
           </div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <div className="text-[10px] font-black tracking-widest text-zinc-400 uppercase">
                 התאמת דופק
