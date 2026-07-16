@@ -12,3 +12,6 @@
 [2026-07-16 10:40] STATUS: Backend מלא ✅, Frontend צריך עיצוב 1:1 לפי מדריך
 [2026-07-16 10:45] TASK#6: נשלח קבלן (deleg_7b17785a) לכתיבת App.tsx, MapView, UploadZone, TimelineView, LapsTable
 [2026-07-16 10:45] BACKEND: /api/runs/3 מחזיר 2800 points + raw_stats עם type/laps/power/cadence
+[2026-07-16 10:52] TASK#6: קבלן סיים — 7 קבצים, 1077 שורות, vite build 871 modules 0 errors ✅
+[2026-07-16 10:53] TASK#6: frontend dev server רץ על :5173 ✅
+[2026-07-16 10:53] COMMIT: 3b64c15 — frontend 1:1 מלא
