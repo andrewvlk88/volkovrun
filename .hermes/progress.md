@@ -15,3 +15,14 @@
 [2026-07-16 10:52] TASK#6: קבלן סיים — 7 קבצים, 1077 שורות, vite build 871 modules 0 errors ✅
 [2026-07-16 10:53] TASK#6: frontend dev server רץ על :5173 ✅
 [2026-07-16 10:53] COMMIT: 3b64c15 — frontend 1:1 מלא
+[2026-07-16 11:00] TASK#7: email_report.py ✅ — HTML עם inline CSS, KPI cards, laps, whoop
+[2026-07-16 11:00] TASK#10: start.sh ✅ — backend+frontend startup
+[2026-07-16 11:00] COMMIT: 5f58b67 — email_report + garmin_sync אמיתי + start.sh
+[2026-07-16 15:15] WHOOP: re-auth ידני דרך דפדפן (בלי tunnel) — טוקנים נשמרו ✅
+[2026-07-16 15:15] WHOOP DATA: 4 recovery, 4 sleep, 4 cycle, 288 heart_rate points
+[2026-07-16 15:16] WHOOP SYNC: recovery+sleep+cycle+288hr → volkov.db ✅
+[2026-07-16 15:16] TIMELINE: 300pts, recovery=68%, RHR=54, HRV=72 ✅
+[2026-07-16 15:20] GARMIN: אישורים ב-.env ✅, אבל IP rate-limited (429)
+[2026-07-16 15:20] GARMIN RETRY: cron 16:30 — ינסה שוב אוטומטית
+[2026-07-16 15:22] COMMIT: 31a9c43 — garmin_login.py
+[2026-07-16 15:25] PERSISTENCE: @reboot crontab — start.sh ירוץ אוטומטית אחרי ריבוט ✅

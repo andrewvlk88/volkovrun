@@ -1,0 +1,14 @@
+[Unit]
+Description=Volkov Run Lab — Backend (uvicorn) + Frontend (vite)
+After=network.target
+
+[Service]
+Type=forking
+User=andrew
+WorkingDirectory=/home/andrew/projects/volkov-run-lab/volkov-run-lab
+ExecStart=/bin/bash /home/andrew/projects/volkov-run-lab/volkov-run-lab/start.sh
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
